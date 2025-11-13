@@ -5,15 +5,12 @@ import {
   Card,
   CardContent,
   Typography,
-  TextField,
   Button,
-  Chip,
-  Avatar,
   List,
   ListItem,
   ListItemText,
   ListItemAvatar,
-  IconButton,
+  Avatar,
   Paper,
   Divider,
   Accordion,
@@ -21,28 +18,17 @@ import {
   AccordionDetails,
   Tabs,
   Tab,
-  Badge,
-  InputAdornment,
 } from '@mui/material';
 import {
-  Search,
-  LibraryBooks,
-  Article,
-  VideoLibrary,
-  PictureAsPdf,
-  Link,
   ExpandMore,
-  Bookmark,
-  BookmarkBorder,
-  Share,
-  Download,
-  Visibility,
-  TrendingUp,
   Schedule,
-  Person,
-  Business,
-  Assessment,
 } from '@mui/icons-material';
+
+// Import components
+import DocumentUpload from '../../components/Knowledgebase/DocumentUpload';
+import SearchSection from '../../components/Knowledgebase/SearchSection';
+import ResultsList from '../../components/Knowledgebase/ResultsList';
+import PageHeader from '../../components/Common/PageHeader';
 
 interface KnowledgeItem {
   id: string;
@@ -157,27 +143,6 @@ const Knowledgebase: React.FC = () => {
     { tag: 'integration', count: 22 },
   ];
 
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'document': return <PictureAsPdf />;
-      case 'video': return <VideoLibrary />;
-      case 'article': return <Article />;
-      case 'faq': return <LibraryBooks />;
-      case 'policy': return <Assessment />;
-      default: return <Article />;
-    }
-  };
-
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case 'document': return 'error';
-      case 'video': return 'info';
-      case 'article': return 'success';
-      case 'faq': return 'warning';
-      case 'policy': return 'secondary';
-      default: return 'default';
-    }
-  };
 
   const getSourceColor = (source: string) => {
     switch (source) {
@@ -198,6 +163,18 @@ const Knowledgebase: React.FC = () => {
     console.log('Toggle bookmark for:', id);
   };
 
+  const handleViewItem = (id: string) => {
+    console.log('View item:', id);
+  };
+
+  const handleFileUpload = (files: any[]) => {
+    console.log('Files uploaded:', files);
+  };
+
+  const handleFileDelete = (fileId: string) => {
+    console.log('File deleted:', fileId);
+  };
+
   const filteredItems = knowledgeItems.filter(item => {
     const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          item.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -210,92 +187,22 @@ const Knowledgebase: React.FC = () => {
     <Grid container spacing={3}>
       {/* Search Section */}
       <Grid item xs={12}>
-        <Card>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              Search Knowledge Base
-            </Typography>
-            <TextField
-              fullWidth
-              placeholder="Search for documents, articles, FAQs, and more..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <Search />
-                  </InputAdornment>
-                ),
-              }}
-              sx={{ mb: 2 }}
-            />
-            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-              {categories.map((category) => (
-                <Chip
-                  key={category.name}
-                  label={`${category.label} (${category.count})`}
-                  onClick={() => setSelectedCategory(category.name)}
-                  color={selectedCategory === category.name ? 'primary' : 'default'}
-                  variant={selectedCategory === category.name ? 'filled' : 'outlined'}
-                />
-              ))}
-            </Box>
-          </CardContent>
-        </Card>
+        <SearchSection
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          selectedCategory={selectedCategory}
+          onCategoryChange={setSelectedCategory}
+          categories={categories}
+        />
       </Grid>
 
       {/* Results */}
       <Grid item xs={12} md={8}>
-        <Typography variant="h6" gutterBottom>
-          Search Results ({filteredItems.length})
-        </Typography>
-        {filteredItems.map((item) => (
-          <Card key={item.id} sx={{ mb: 2 }}>
-            <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
-                <Avatar sx={{ bgcolor: `${getTypeColor(item.type)}.main`, mr: 2 }}>
-                  {getTypeIcon(item.type)}
-                </Avatar>
-                <Box sx={{ flex: 1 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <Typography variant="h6" sx={{ flex: 1 }}>
-                      {item.title}
-                    </Typography>
-                    <IconButton onClick={() => toggleBookmark(item.id)}>
-                      {item.isBookmarked ? <Bookmark color="primary" /> : <BookmarkBorder />}
-                    </IconButton>
-                  </Box>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    {item.content}
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                    <Chip label={item.type} size="small" color={getTypeColor(item.type) as any} />
-                    <Chip label={item.source} size="small" color={getSourceColor(item.source) as any} variant="outlined" />
-                    <Typography variant="caption" color="text.secondary">
-                      by {item.author} • {item.views} views • Updated {item.lastUpdated.toLocaleDateString()}
-                    </Typography>
-                  </Box>
-                  <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                    {item.tags.map((tag) => (
-                      <Chip key={tag} label={tag} size="small" variant="outlined" />
-                    ))}
-                  </Box>
-                </Box>
-              </Box>
-              <Box sx={{ display: 'flex', gap: 1 }}>
-                <Button size="small" startIcon={<Visibility />}>
-                  View
-                </Button>
-                <Button size="small" startIcon={<Download />}>
-                  Download
-                </Button>
-                <Button size="small" startIcon={<Share />}>
-                  Share
-                </Button>
-              </Box>
-            </CardContent>
-          </Card>
-        ))}
+        <ResultsList
+          items={filteredItems}
+          onToggleBookmark={toggleBookmark}
+          onViewItem={handleViewItem}
+        />
       </Grid>
 
       {/* Sidebar */}
@@ -307,13 +214,15 @@ const Knowledgebase: React.FC = () => {
             </Typography>
             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
               {popularTags.map((tagItem) => (
-                <Chip
+                <Button
                   key={tagItem.tag}
-                  label={`${tagItem.tag} (${tagItem.count})`}
+                  variant="outlined"
                   size="small"
                   onClick={() => setSearchQuery(tagItem.tag)}
-                  clickable
-                />
+                  sx={{ mb: 1 }}
+                >
+                  {tagItem.tag} ({tagItem.count})
+                </Button>
               ))}
             </Box>
           </CardContent>
@@ -468,26 +377,29 @@ const Knowledgebase: React.FC = () => {
 
   return (
     <Box>
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" gutterBottom fontWeight="bold">
-          Knowledge Base
-        </Typography>
-        <Typography variant="body1" color="text.secondary">
-          Access all company knowledge, documentation, and resources in one place
-        </Typography>
-      </Box>
+      <PageHeader
+        title="Knowledge Base"
+        subtitle="Access all company knowledge, documentation, and resources in one place"
+      />
 
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
         <Tabs value={activeTab} onChange={(_, newValue) => setActiveTab(newValue)}>
           <Tab label="Search & Browse" />
+          <Tab label="Document Management" />
           <Tab label="FAQ" />
           <Tab label="Analytics" />
         </Tabs>
       </Box>
 
       {activeTab === 0 && renderSearchAndBrowse()}
-      {activeTab === 1 && renderFAQ()}
-      {activeTab === 2 && renderAnalytics()}
+      {activeTab === 1 && (
+        <DocumentUpload
+          onFileUpload={handleFileUpload}
+          onFileDelete={handleFileDelete}
+        />
+      )}
+      {activeTab === 2 && renderFAQ()}
+      {activeTab === 3 && renderAnalytics()}
     </Box>
   );
 };
