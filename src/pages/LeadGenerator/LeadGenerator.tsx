@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Grid,
@@ -12,7 +12,6 @@ import {
   List,
   ListItem,
   ListItemText,
-  ListItemAvatar,
   IconButton,
   Dialog,
   DialogTitle,
@@ -28,136 +27,301 @@ import {
   Tabs,
   Tab,
   Badge,
+  Alert,
+  Snackbar,
+  CircularProgress,
+  Tooltip,
+  FormControlLabel,
+  Checkbox,
 } from '@mui/material';
-import { DataGrid, GridColDef } from '@mui/x-data-grid';
+import { DataGrid, GridColDef, GridRowSelectionModel } from '@mui/x-data-grid';
 import {
   Search,
   Add,
   FilterList,
   Star,
-  StarBorder,
   Business,
   Email,
   Phone,
-  Language,
-  LocationOn,
-  TrendingUp,
-  Schedule,
-  Refresh,
   Download,
-  Send,
   Visibility,
   Edit,
+  Delete,
+  PlayArrow,
+  Stop,
+  Refresh,
+  Psychology,
+  CheckCircle,
+  Error as ErrorIcon,
+  Schedule,
+  TrendingUp,
 } from '@mui/icons-material';
+import { leadsApi, scraperApi, exportApi, Lead, LeadStats, ScrapingJob, ScraperConfig } from '../../services/api';
 
-interface Lead {
-  id: string;
-  companyName: string;
-  contactName: string;
-  email: string;
-  phone: string;
-  website: string;
-  industry: string;
-  location: string;
-  score: number;
-  status: 'new' | 'contacted' | 'qualified' | 'converted';
-  source: 'ai-generated' | 'manual' | 'imported';
-  lastContact: Date;
-  estimatedValue: number;
-  priority: 'high' | 'medium' | 'low';
-}
+// Transform backend Lead to frontend format
+const transformLead = (lead: Lead) => ({
+  id: lead.id,
+  companyName: lead.company_name,
+  contactName: lead.contact_name || '',
+  email: lead.email || '',
+  phone: lead.phone || '',
+  website: lead.website || '',
+  industry: lead.industry || '',
+  location: lead.location || '',
+  score: lead.score,
+  status: lead.status,
+  source: lead.source,
+  lastContact: lead.last_contacted ? new Date(lead.last_contacted) : null,
+  estimatedValue: lead.estimated_value,
+  priority: lead.priority,
+  aiAnalysis: lead.ai_analysis,
+  createdAt: lead.created_at,
+});
+
+type TransformedLead = ReturnType<typeof transformLead>;
 
 const LeadGenerator: React.FC = () => {
+  // State
   const [activeTab, setActiveTab] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIndustry, setSelectedIndustry] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [selectedStatus, setSelectedStatus] = useState('');
+  const [leads, setLeads] = useState<TransformedLead[]>([]);
+  const [stats, setStats] = useState<LeadStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [openLeadDetail, setOpenLeadDetail] = useState(false);
-  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [selectedLead, setSelectedLead] = useState<TransformedLead | null>(null);
+  const [selectedRows, setSelectedRows] = useState<GridRowSelectionModel>([]);
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({
+    open: false,
+    message: '',
+    severity: 'info',
+  });
 
-  const leads: Lead[] = [
-    {
-      id: '1',
-      companyName: 'Luxury Retail Group',
-      contactName: 'Sarah Johnson',
-      email: 'sarah.johnson@luxuryretail.com',
-      phone: '+61 2 9876 5432',
-      website: 'www.luxuryretail.com',
-      industry: 'Retail',
-      location: 'Sydney, NSW',
-      score: 92,
-      status: 'new',
-      source: 'ai-generated',
-      lastContact: new Date('2024-11-05'),
-      estimatedValue: 75000,
-      priority: 'high',
-    },
-    {
-      id: '2',
-      companyName: 'Premium Hospitality Solutions',
-      contactName: 'Michael Chen',
-      email: 'm.chen@premiumhosp.com',
-      phone: '+61 3 8765 4321',
-      website: 'www.premiumhosp.com',
-      industry: 'Hospitality',
-      location: 'Melbourne, VIC',
-      score: 87,
-      status: 'contacted',
-      source: 'ai-generated',
-      lastContact: new Date('2024-11-03'),
-      estimatedValue: 45000,
-      priority: 'high',
-    },
-    {
-      id: '3',
-      companyName: 'Boutique Chain Australia',
-      contactName: 'Emma Wilson',
-      email: 'emma@boutiquechain.au',
-      phone: '+61 7 7654 3210',
-      website: 'www.boutiquechain.au',
-      industry: 'Fashion',
-      location: 'Brisbane, QLD',
-      score: 78,
-      status: 'qualified',
-      source: 'manual',
-      lastContact: new Date('2024-11-01'),
-      estimatedValue: 32000,
-      priority: 'medium',
-    },
-    {
-      id: '4',
-      companyName: 'Wellness Spa Network',
-      contactName: 'David Brown',
-      email: 'david@wellnessspa.com',
-      phone: '+61 8 6543 2109',
-      website: 'www.wellnessspa.com',
-      industry: 'Wellness',
-      location: 'Perth, WA',
-      score: 85,
-      status: 'new',
-      source: 'ai-generated',
-      lastContact: new Date('2024-10-30'),
-      estimatedValue: 28000,
-      priority: 'medium',
-    },
-  ];
+  // Scraping state
+  const [scraperConfig, setScraperConfig] = useState<ScraperConfig | null>(null);
+  const [scrapingJobs, setScrapingJobs] = useState<ScrapingJob[]>([]);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  const [generationForm, setGenerationForm] = useState({
+    keywords: '',
+    location: '',
+    maxLeads: 50,
+    analyzeWithAI: true,
+  });
 
   const industries = ['All', 'Retail', 'Hospitality', 'Fashion', 'Wellness', 'Healthcare', 'Corporate'];
 
-  const leadStats = {
-    total: leads.length,
-    new: leads.filter(l => l.status === 'new').length,
-    contacted: leads.filter(l => l.status === 'contacted').length,
-    qualified: leads.filter(l => l.status === 'qualified').length,
-    converted: leads.filter(l => l.status === 'converted').length,
+  // Load data
+  const loadLeads = useCallback(async () => {
+    try {
+      setLoading(true);
+      const params: any = { per_page: 100 };
+      if (searchQuery) params.search = searchQuery;
+      if (selectedIndustry && selectedIndustry !== 'All') params.industry = selectedIndustry;
+      if (selectedStatus) params.status = selectedStatus;
+
+      const response = await leadsApi.getLeads(params);
+      if (response.success && response.data) {
+        setLeads(response.data.leads.map(transformLead));
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to load leads');
+      showSnackbar('Failed to load leads', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [searchQuery, selectedIndustry, selectedStatus]);
+
+  const loadStats = async () => {
+    try {
+      const response = await leadsApi.getStats();
+      if (response.success && response.data) {
+        setStats(response.data);
+      }
+    } catch (err) {
+      console.error('Failed to load stats:', err);
+    }
   };
 
+  const loadScraperConfig = async () => {
+    try {
+      const response = await scraperApi.getConfig();
+      if (response.success && response.data) {
+        setScraperConfig(response.data);
+      }
+    } catch (err) {
+      console.error('Failed to load scraper config:', err);
+    }
+  };
+
+  const loadScrapingJobs = async () => {
+    try {
+      const response = await scraperApi.listJobs();
+      if (response.success && response.data) {
+        setScrapingJobs(response.data.jobs);
+      }
+    } catch (err) {
+      console.error('Failed to load scraping jobs:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadLeads();
+    loadStats();
+    loadScraperConfig();
+    loadScrapingJobs();
+  }, [loadLeads]);
+
+  // Poll for job status when generating
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    
+    if (currentJobId && isGenerating) {
+      interval = setInterval(async () => {
+        try {
+          const response = await scraperApi.getJobStatus(currentJobId);
+          if (response.success && response.data) {
+            const job = response.data;
+            if (job.status === 'completed' || job.status === 'failed' || job.status === 'stopped') {
+              setIsGenerating(false);
+              setCurrentJobId(null);
+              loadLeads();
+              loadStats();
+              loadScrapingJobs();
+              showSnackbar(
+                job.status === 'completed' 
+                  ? `Scraping completed! Found ${job.processed_leads} leads.`
+                  : `Scraping ${job.status}`,
+                job.status === 'completed' ? 'success' : 'error'
+              );
+            }
+          }
+        } catch (err) {
+          console.error('Failed to check job status:', err);
+        }
+      }, 3000);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [currentJobId, isGenerating]);
+
+  const showSnackbar = (message: string, severity: 'success' | 'error' | 'info') => {
+    setSnackbar({ open: true, message, severity });
+  };
+
+  // Actions
+  const handleGenerateLeads = async () => {
+    try {
+      setIsGenerating(true);
+      const keywords = generationForm.keywords.split(',').map(k => k.trim()).filter(k => k);
+      const locations = generationForm.location.split(',').map(l => l.trim()).filter(l => l);
+
+      const response = await scraperApi.startScraping({
+        keywords: keywords.length > 0 ? keywords : undefined,
+        locations: locations.length > 0 ? locations : undefined,
+        max_leads: generationForm.maxLeads,
+        analyze_with_ai: generationForm.analyzeWithAI,
+      });
+
+      if (response.success && response.data) {
+        setCurrentJobId(response.data.job_id);
+        showSnackbar('Lead generation started!', 'info');
+      }
+    } catch (err: any) {
+      setIsGenerating(false);
+      showSnackbar(err.message || 'Failed to start lead generation', 'error');
+    }
+  };
+
+  const handleStopGeneration = async () => {
+    if (currentJobId) {
+      try {
+        await scraperApi.stopJob(currentJobId);
+        setIsGenerating(false);
+        setCurrentJobId(null);
+        showSnackbar('Lead generation stopped', 'info');
+        loadScrapingJobs();
+      } catch (err: any) {
+        showSnackbar(err.message || 'Failed to stop generation', 'error');
+      }
+    }
+  };
+
+  const handleLeadClick = (lead: TransformedLead) => {
+    setSelectedLead(lead);
+    setOpenLeadDetail(true);
+  };
+
+  const handleAnalyzeLead = async (leadId: string) => {
+    try {
+      showSnackbar('Analyzing lead with AI...', 'info');
+      await leadsApi.analyzeLead(leadId);
+      loadLeads();
+      showSnackbar('AI analysis completed!', 'success');
+    } catch (err: any) {
+      showSnackbar(err.message || 'Failed to analyze lead', 'error');
+    }
+  };
+
+  const handleBulkAnalyze = async () => {
+    if (selectedRows.length === 0) return;
+    try {
+      showSnackbar(`Analyzing ${selectedRows.length} leads...`, 'info');
+      await leadsApi.bulkAnalyze(selectedRows as string[]);
+      loadLeads();
+      showSnackbar('Bulk analysis completed!', 'success');
+    } catch (err: any) {
+      showSnackbar(err.message || 'Failed to analyze leads', 'error');
+    }
+  };
+
+  const handleExportExcel = async () => {
+    try {
+      const params = selectedRows.length > 0 ? { lead_ids: selectedRows as string[] } : {};
+      const response = await exportApi.exportToExcel(params);
+      if (response.success && response.data) {
+        window.open(exportApi.getDownloadUrl(response.data.filename), '_blank');
+        showSnackbar(`Exported ${response.data.total_exported} leads to Excel`, 'success');
+      }
+    } catch (err: any) {
+      showSnackbar(err.message || 'Failed to export', 'error');
+    }
+  };
+
+  const handleDeleteLead = async (leadId: string) => {
+    try {
+      await leadsApi.deleteLead(leadId);
+      loadLeads();
+      loadStats();
+      showSnackbar('Lead deleted successfully', 'success');
+    } catch (err: any) {
+      showSnackbar(err.message || 'Failed to delete lead', 'error');
+    }
+  };
+
+  const handleUpdateStatus = async (leadId: string, newStatus: string) => {
+    try {
+      await leadsApi.updateLead(leadId, { status: newStatus } as any);
+      loadLeads();
+      loadStats();
+      showSnackbar('Lead status updated', 'success');
+    } catch (err: any) {
+      showSnackbar(err.message || 'Failed to update status', 'error');
+    }
+  };
+
+  // Helper functions
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'new': return 'info';
       case 'contacted': return 'warning';
       case 'qualified': return 'success';
       case 'converted': return 'primary';
+      case 'lost': return 'error';
       default: return 'default';
     }
   };
@@ -177,19 +341,6 @@ const LeadGenerator: React.FC = () => {
     return 'error';
   };
 
-  const handleGenerateLeads = () => {
-    setIsGenerating(true);
-    // Simulate AI lead generation
-    setTimeout(() => {
-      setIsGenerating(false);
-    }, 3000);
-  };
-
-  const handleLeadClick = (lead: Lead) => {
-    setSelectedLead(lead);
-    setOpenLeadDetail(true);
-  };
-
   const columns: GridColDef[] = [
     {
       field: 'companyName',
@@ -204,17 +355,13 @@ const LeadGenerator: React.FC = () => {
         </Box>
       ),
     },
-    {
-      field: 'contactName',
-      headerName: 'Contact',
-      width: 150,
-    },
+    { field: 'contactName', headerName: 'Contact', width: 150 },
     {
       field: 'industry',
       headerName: 'Industry',
       width: 120,
       renderCell: (params) => (
-        <Chip label={params.value} size="small" variant="outlined" />
+        params.value ? <Chip label={params.value} size="small" variant="outlined" /> : '-'
       ),
     },
     {
@@ -245,7 +392,7 @@ const LeadGenerator: React.FC = () => {
       field: 'estimatedValue',
       headerName: 'Est. Value',
       width: 120,
-      renderCell: (params) => `$${(params.value as number).toLocaleString()}`,
+      renderCell: (params) => params.value ? `$${(params.value as number).toLocaleString()}` : '-',
     },
     {
       field: 'priority',
@@ -263,18 +410,24 @@ const LeadGenerator: React.FC = () => {
     {
       field: 'actions',
       headerName: 'Actions',
-      width: 120,
+      width: 150,
       renderCell: (params) => (
         <Box>
-          <IconButton size="small" onClick={() => handleLeadClick(params.row)}>
-            <Visibility fontSize="small" />
-          </IconButton>
-          <IconButton size="small">
-            <Edit fontSize="small" />
-          </IconButton>
-          <IconButton size="small">
-            <Star fontSize="small" />
-          </IconButton>
+          <Tooltip title="View Details">
+            <IconButton size="small" onClick={() => handleLeadClick(params.row)}>
+              <Visibility fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="AI Analyze">
+            <IconButton size="small" onClick={() => handleAnalyzeLead(params.row.id)}>
+              <Psychology fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Delete">
+            <IconButton size="small" onClick={() => handleDeleteLead(params.row.id)} color="error">
+              <Delete fontSize="small" />
+            </IconButton>
+          </Tooltip>
         </Box>
       ),
     },
@@ -290,129 +443,158 @@ const LeadGenerator: React.FC = () => {
             </Typography>
             
             <Grid container spacing={2} sx={{ mb: 3 }}>
-              <Grid item xs={12} md={6}>
+              <Grid item xs={12}>
                 <TextField
                   fullWidth
-                  label="Target Industry"
-                  placeholder="e.g., Luxury Retail, Hospitality"
+                  label="Target Industries/Keywords"
+                  placeholder="e.g., luxury retail, hospitality, spa wellness (comma separated)"
+                  value={generationForm.keywords}
+                  onChange={(e) => setGenerationForm({ ...generationForm, keywords: e.target.value })}
+                  helperText={scraperConfig ? `Available: ${scraperConfig.target_industries.slice(0, 5).join(', ')}...` : ''}
                 />
               </Grid>
               <Grid item xs={12} md={6}>
                 <TextField
                   fullWidth
-                  label="Location"
-                  placeholder="e.g., Sydney, Melbourne, Australia"
+                  label="Locations"
+                  placeholder="e.g., Sydney NSW, Melbourne VIC (comma separated)"
+                  value={generationForm.location}
+                  onChange={(e) => setGenerationForm({ ...generationForm, location: e.target.value })}
+                  helperText={scraperConfig ? `Available: ${scraperConfig.target_locations.slice(0, 3).join(', ')}...` : ''}
                 />
               </Grid>
               <Grid item xs={12} md={6}>
-                <TextField
-                  fullWidth
-                  label="Company Size"
-                  placeholder="e.g., 50-200 employees"
-                />
+                <FormControl fullWidth>
+                  <InputLabel>Max Results</InputLabel>
+                  <Select
+                    value={generationForm.maxLeads}
+                    label="Max Results"
+                    onChange={(e) => setGenerationForm({ ...generationForm, maxLeads: e.target.value as number })}
+                  >
+                    <MenuItem value={25}>25 leads</MenuItem>
+                    <MenuItem value={50}>50 leads</MenuItem>
+                    <MenuItem value={100}>100 leads</MenuItem>
+                  </Select>
+                </FormControl>
               </Grid>
-              <Grid item xs={12} md={6}>
-                <TextField
-                  fullWidth
-                  label="Revenue Range"
-                  placeholder="e.g., $1M - $10M"
+              <Grid item xs={12}>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={generationForm.analyzeWithAI}
+                      onChange={(e) => setGenerationForm({ ...generationForm, analyzeWithAI: e.target.checked })}
+                    />
+                  }
+                  label="Analyze leads with AI (score, priority, recommendations)"
                 />
               </Grid>
             </Grid>
 
-            <Box sx={{ mb: 3 }}>
-              <Typography variant="subtitle2" gutterBottom>
-                Search Keywords
-              </Typography>
-              <TextField
-                fullWidth
-                multiline
-                rows={3}
-                placeholder="Enter keywords related to your target market (e.g., premium fragrances, luxury retail, boutique stores)"
-              />
-            </Box>
-
             {isGenerating && (
               <Box sx={{ mb: 3 }}>
-                <Typography variant="body2" gutterBottom>
-                  Generating leads... This may take a few minutes.
-                </Typography>
-                <LinearProgress />
+                <Alert severity="info" icon={<CircularProgress size={20} />}>
+                  Generating leads... This may take a few minutes. You can continue using the app.
+                </Alert>
+                <LinearProgress sx={{ mt: 1 }} />
               </Box>
             )}
 
             <Box sx={{ display: 'flex', gap: 2 }}>
-              <Button
-                variant="contained"
-                startIcon={<Search />}
-                onClick={handleGenerateLeads}
-                disabled={isGenerating}
-                size="large"
-              >
-                {isGenerating ? 'Generating...' : 'Generate Leads'}
-              </Button>
+              {!isGenerating ? (
+                <Button
+                  variant="contained"
+                  startIcon={<PlayArrow />}
+                  onClick={handleGenerateLeads}
+                  size="large"
+                >
+                  Start Lead Generation
+                </Button>
+              ) : (
+                <Button
+                  variant="outlined"
+                  color="error"
+                  startIcon={<Stop />}
+                  onClick={handleStopGeneration}
+                  size="large"
+                >
+                  Stop Generation
+                </Button>
+              )}
               <Button
                 variant="outlined"
-                startIcon={<Schedule />}
+                startIcon={<Refresh />}
+                onClick={loadScrapingJobs}
                 size="large"
               >
-                Schedule Generation
+                Refresh Jobs
               </Button>
             </Box>
           </CardContent>
         </Card>
       </Grid>
 
-      <Grid xs={12} md={4}>
+      <Grid item xs={12} md={4}>
         <Card sx={{ mb: 2 }}>
           <CardContent>
             <Typography variant="h6" gutterBottom>
-              Generation Settings
+              Scraper Configuration
             </Typography>
-            <FormControl fullWidth sx={{ mb: 2 }}>
-              <InputLabel>Lead Quality</InputLabel>
-              <Select defaultValue="high" label="Lead Quality">
-                <MenuItem value="high">High Quality (Score &gt; 80)</MenuItem>
-                <MenuItem value="medium">Medium Quality (Score &gt; 60)</MenuItem>
-                <MenuItem value="all">All Leads</MenuItem>
-              </Select>
-            </FormControl>
-            <FormControl fullWidth sx={{ mb: 2 }}>
-              <InputLabel>Max Results</InputLabel>
-              <Select defaultValue="50" label="Max Results">
-                <MenuItem value="25">25 leads</MenuItem>
-                <MenuItem value="50">50 leads</MenuItem>
-                <MenuItem value="100">100 leads</MenuItem>
-              </Select>
-            </FormControl>
+            {scraperConfig ? (
+              <Box>
+                <Typography variant="body2" color="text.secondary" gutterBottom>
+                  Max leads per run: {scraperConfig.max_leads_per_run}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" gutterBottom>
+                  Delay between requests: {scraperConfig.scraping_delay}s
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Sources: {scraperConfig.available_sources.join(', ')}
+                </Typography>
+              </Box>
+            ) : (
+              <CircularProgress size={20} />
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardContent>
             <Typography variant="h6" gutterBottom>
-              Recent Generations
+              Recent Jobs
             </Typography>
             <List>
-              <ListItem sx={{ px: 0 }}>
-                <ListItemText
-                  primary="Luxury Retail - Sydney"
-                  secondary="45 leads generated"
-                  primaryTypographyProps={{ fontSize: '0.875rem' }}
-                  secondaryTypographyProps={{ fontSize: '0.75rem' }}
-                />
-                <Chip label="Today" size="small" color="success" />
-              </ListItem>
-              <Divider />
-              <ListItem sx={{ px: 0 }}>
-                <ListItemText
-                  primary="Hospitality - Melbourne"
-                  secondary="32 leads generated"
-                  primaryTypographyProps={{ fontSize: '0.875rem' }}
-                  secondaryTypographyProps={{ fontSize: '0.75rem' }}
-                />
-                <Chip label="Yesterday" size="small" />
-              </ListItem>
+              {scrapingJobs.slice(0, 5).map((job) => (
+                <React.Fragment key={job.id}>
+                  <ListItem sx={{ px: 0 }}>
+                    <ListItemText
+                      primary={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          {job.status === 'completed' && <CheckCircle color="success" fontSize="small" />}
+                          {job.status === 'running' && <CircularProgress size={16} />}
+                          {job.status === 'failed' && <ErrorIcon color="error" fontSize="small" />}
+                          <Typography variant="body2">
+                            {job.parameters.keywords?.slice(0, 2).join(', ') || 'All industries'}
+                          </Typography>
+                        </Box>
+                      }
+                      secondary={`${job.processed_leads} leads • ${new Date(job.started_at).toLocaleDateString()}`}
+                      primaryTypographyProps={{ fontSize: '0.875rem' }}
+                      secondaryTypographyProps={{ fontSize: '0.75rem' }}
+                    />
+                    <Chip
+                      label={job.status}
+                      size="small"
+                      color={job.status === 'completed' ? 'success' : job.status === 'running' ? 'info' : 'default'}
+                    />
+                  </ListItem>
+                  <Divider />
+                </React.Fragment>
+              ))}
+              {scrapingJobs.length === 0 && (
+                <Typography variant="body2" color="text.secondary">
+                  No jobs yet. Start generating leads!
+                </Typography>
+              )}
             </List>
           </CardContent>
         </Card>
@@ -427,7 +609,7 @@ const LeadGenerator: React.FC = () => {
         <Grid item xs={12} sm={6} md={2}>
           <Paper sx={{ p: 2, textAlign: 'center' }}>
             <Typography variant="h4" color="primary.main" fontWeight="bold">
-              {leadStats.total}
+              {stats?.total_leads || 0}
             </Typography>
             <Typography variant="body2" color="text.secondary">
               Total Leads
@@ -437,7 +619,7 @@ const LeadGenerator: React.FC = () => {
         <Grid item xs={12} sm={6} md={2}>
           <Paper sx={{ p: 2, textAlign: 'center' }}>
             <Typography variant="h4" color="info.main" fontWeight="bold">
-              {leadStats.new}
+              {stats?.by_status?.new || 0}
             </Typography>
             <Typography variant="body2" color="text.secondary">
               New Leads
@@ -447,7 +629,7 @@ const LeadGenerator: React.FC = () => {
         <Grid item xs={12} sm={6} md={2}>
           <Paper sx={{ p: 2, textAlign: 'center' }}>
             <Typography variant="h4" color="warning.main" fontWeight="bold">
-              {leadStats.contacted}
+              {stats?.by_status?.contacted || 0}
             </Typography>
             <Typography variant="body2" color="text.secondary">
               Contacted
@@ -457,7 +639,7 @@ const LeadGenerator: React.FC = () => {
         <Grid item xs={12} sm={6} md={2}>
           <Paper sx={{ p: 2, textAlign: 'center' }}>
             <Typography variant="h4" color="success.main" fontWeight="bold">
-              {leadStats.qualified}
+              {stats?.by_status?.qualified || 0}
             </Typography>
             <Typography variant="body2" color="text.secondary">
               Qualified
@@ -466,18 +648,28 @@ const LeadGenerator: React.FC = () => {
         </Grid>
         <Grid item xs={12} sm={6} md={2}>
           <Paper sx={{ p: 2, textAlign: 'center' }}>
-            <Typography variant="h4" color="primary.main" fontWeight="bold">
-              {leadStats.converted}
+            <Typography variant="h4" color="secondary.main" fontWeight="bold">
+              ${((stats?.total_estimated_value || 0) / 1000).toFixed(0)}K
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Converted
+              Total Value
+            </Typography>
+          </Paper>
+        </Grid>
+        <Grid item xs={12} sm={6} md={2}>
+          <Paper sx={{ p: 2, textAlign: 'center' }}>
+            <Typography variant="h4" color="primary.main" fontWeight="bold">
+              {stats?.average_score?.toFixed(0) || 0}%
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Avg Score
             </Typography>
           </Paper>
         </Grid>
       </Grid>
 
       {/* Filters and Actions */}
-      <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+      <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap', alignItems: 'center' }}>
         <TextField
           placeholder="Search leads..."
           value={searchQuery}
@@ -485,9 +677,10 @@ const LeadGenerator: React.FC = () => {
           InputProps={{
             startAdornment: <Search sx={{ mr: 1, color: 'text.secondary' }} />,
           }}
-          sx={{ minWidth: 300 }}
+          sx={{ minWidth: 250 }}
+          size="small"
         />
-        <FormControl sx={{ minWidth: 150 }}>
+        <FormControl sx={{ minWidth: 130 }} size="small">
           <InputLabel>Industry</InputLabel>
           <Select
             value={selectedIndustry}
@@ -495,28 +688,54 @@ const LeadGenerator: React.FC = () => {
             label="Industry"
           >
             {industries.map((industry) => (
-              <MenuItem key={industry} value={industry}>
+              <MenuItem key={industry} value={industry === 'All' ? '' : industry}>
                 {industry}
               </MenuItem>
             ))}
           </Select>
         </FormControl>
-        <Button variant="outlined" startIcon={<FilterList />}>
-          More Filters
+        <FormControl sx={{ minWidth: 130 }} size="small">
+          <InputLabel>Status</InputLabel>
+          <Select
+            value={selectedStatus}
+            onChange={(e) => setSelectedStatus(e.target.value)}
+            label="Status"
+          >
+            <MenuItem value="">All</MenuItem>
+            <MenuItem value="new">New</MenuItem>
+            <MenuItem value="contacted">Contacted</MenuItem>
+            <MenuItem value="qualified">Qualified</MenuItem>
+            <MenuItem value="converted">Converted</MenuItem>
+          </Select>
+        </FormControl>
+        <Button variant="outlined" startIcon={<Refresh />} onClick={loadLeads}>
+          Refresh
         </Button>
-        <Button variant="outlined" startIcon={<Download />}>
-          Export
-        </Button>
-        <Button variant="contained" startIcon={<Add />}>
-          Add Lead
+        {selectedRows.length > 0 && (
+          <>
+            <Button variant="outlined" startIcon={<Psychology />} onClick={handleBulkAnalyze}>
+              Analyze ({selectedRows.length})
+            </Button>
+          </>
+        )}
+        <Button variant="outlined" startIcon={<Download />} onClick={handleExportExcel}>
+          Export Excel
         </Button>
       </Box>
+
+      {/* Error display */}
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
 
       {/* Data Grid */}
       <Card>
         <DataGrid
           rows={leads}
           columns={columns}
+          loading={loading}
           initialState={{
             pagination: {
               paginationModel: { page: 0, pageSize: 10 },
@@ -525,10 +744,87 @@ const LeadGenerator: React.FC = () => {
           pageSizeOptions={[10, 25, 50]}
           checkboxSelection
           disableRowSelectionOnClick
-          sx={{ border: 'none' }}
+          onRowSelectionModelChange={(newSelection) => setSelectedRows(newSelection)}
+          rowSelectionModel={selectedRows}
+          sx={{ border: 'none', minHeight: 400 }}
         />
       </Card>
     </Box>
+  );
+
+  const renderAnalytics = () => (
+    <Grid container spacing={3}>
+      <Grid item xs={12} md={6}>
+        <Card>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              Lead Sources
+            </Typography>
+            <Box sx={{ mt: 2 }}>
+              {['AI Generated', 'Manual', 'Google Search', 'Yellow Pages'].map((source, index) => (
+                <Box key={source} sx={{ mb: 2 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                    <Typography variant="body2">{source}</Typography>
+                    <Typography variant="body2">{[45, 20, 25, 10][index]}%</Typography>
+                  </Box>
+                  <LinearProgress
+                    variant="determinate"
+                    value={[45, 20, 25, 10][index]}
+                    sx={{ height: 8, borderRadius: 4 }}
+                  />
+                </Box>
+              ))}
+            </Box>
+          </CardContent>
+        </Card>
+      </Grid>
+      <Grid item xs={12} md={6}>
+        <Card>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              Top Industries
+            </Typography>
+            <List>
+              {stats && Object.entries(stats.top_industries || {}).map(([industry, count]) => (
+                <ListItem key={industry} sx={{ px: 0 }}>
+                  <ListItemText primary={industry} />
+                  <Chip label={count} size="small" color="primary" />
+                </ListItem>
+              ))}
+            </List>
+          </CardContent>
+        </Card>
+      </Grid>
+      <Grid item xs={12}>
+        <Card>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              Conversion Funnel
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', py: 4 }}>
+              {[
+                { label: 'New', count: stats?.by_status?.new || 0, color: 'info.main' },
+                { label: 'Contacted', count: stats?.by_status?.contacted || 0, color: 'warning.main' },
+                { label: 'Qualified', count: stats?.by_status?.qualified || 0, color: 'success.main' },
+                { label: 'Converted', count: stats?.by_status?.converted || 0, color: 'primary.main' },
+              ].map((stage, index) => (
+                <React.Fragment key={stage.label}>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Typography variant="h3" color={stage.color} fontWeight="bold">
+                      {stage.count}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {stage.label}
+                    </Typography>
+                  </Box>
+                  {index < 3 && <TrendingUp color="disabled" sx={{ fontSize: 40 }} />}
+                </React.Fragment>
+              ))}
+            </Box>
+          </CardContent>
+        </Card>
+      </Grid>
+    </Grid>
   );
 
   return (
@@ -546,7 +842,7 @@ const LeadGenerator: React.FC = () => {
         <Tabs value={activeTab} onChange={(_, newValue) => setActiveTab(newValue)}>
           <Tab
             label={
-              <Badge badgeContent={leadStats.new} color="error">
+              <Badge badgeContent={stats?.by_status?.new || 0} color="error">
                 Lead Management
               </Badge>
             }
@@ -558,37 +854,123 @@ const LeadGenerator: React.FC = () => {
 
       {activeTab === 0 && renderLeadManagement()}
       {activeTab === 1 && renderLeadGeneration()}
-      {activeTab === 2 && (
-        <Typography variant="h6">Analytics Dashboard Coming Soon...</Typography>
-      )}
+      {activeTab === 2 && renderAnalytics()}
 
       {/* Lead Detail Dialog */}
       <Dialog open={openLeadDetail} onClose={() => setOpenLeadDetail(false)} maxWidth="md" fullWidth>
         <DialogTitle>
-          {selectedLead?.companyName}
-          <Chip
-            label={`Score: ${selectedLead?.score}%`}
-            size="small"
-            color={selectedLead ? getScoreColor(selectedLead.score) as any : 'default'}
-            sx={{ ml: 2 }}
-          />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            {selectedLead?.companyName}
+            {selectedLead && (
+              <>
+                <Chip
+                  label={`Score: ${selectedLead.score}%`}
+                  size="small"
+                  color={getScoreColor(selectedLead.score) as any}
+                />
+                <Chip
+                  label={selectedLead.priority}
+                  size="small"
+                  color={getPriorityColor(selectedLead.priority) as any}
+                  variant="outlined"
+                />
+              </>
+            )}
+          </Box>
         </DialogTitle>
         <DialogContent>
           {selectedLead && (
-            <Grid container spacing={2}>
+            <Grid container spacing={3}>
               <Grid item xs={12} md={6}>
-                <Typography variant="subtitle2" gutterBottom>Contact Information</Typography>
-                <Typography variant="body2">Name: {selectedLead.contactName}</Typography>
-                <Typography variant="body2">Email: {selectedLead.email}</Typography>
-                <Typography variant="body2">Phone: {selectedLead.phone}</Typography>
-                <Typography variant="body2">Website: {selectedLead.website}</Typography>
+                <Typography variant="subtitle2" gutterBottom color="primary">
+                  Contact Information
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="body2"><strong>Name:</strong> {selectedLead.contactName || 'N/A'}</Typography>
+                  <Typography variant="body2"><strong>Email:</strong> {selectedLead.email || 'N/A'}</Typography>
+                  <Typography variant="body2"><strong>Phone:</strong> {selectedLead.phone || 'N/A'}</Typography>
+                  <Typography variant="body2"><strong>Website:</strong> {selectedLead.website || 'N/A'}</Typography>
+                </Box>
+                
+                <Typography variant="subtitle2" gutterBottom color="primary">
+                  Company Details
+                </Typography>
+                <Box>
+                  <Typography variant="body2"><strong>Industry:</strong> {selectedLead.industry || 'N/A'}</Typography>
+                  <Typography variant="body2"><strong>Location:</strong> {selectedLead.location || 'N/A'}</Typography>
+                  <Typography variant="body2"><strong>Est. Value:</strong> ${selectedLead.estimatedValue?.toLocaleString() || 0}</Typography>
+                  <Typography variant="body2"><strong>Source:</strong> {selectedLead.source}</Typography>
+                </Box>
               </Grid>
               <Grid item xs={12} md={6}>
-                <Typography variant="subtitle2" gutterBottom>Company Details</Typography>
-                <Typography variant="body2">Industry: {selectedLead.industry}</Typography>
-                <Typography variant="body2">Location: {selectedLead.location}</Typography>
-                <Typography variant="body2">Est. Value: ${selectedLead.estimatedValue.toLocaleString()}</Typography>
-                <Typography variant="body2">Priority: {selectedLead.priority}</Typography>
+                {selectedLead.aiAnalysis ? (
+                  <>
+                    <Typography variant="subtitle2" gutterBottom color="primary">
+                      AI Analysis
+                    </Typography>
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="body2"><strong>Fit:</strong> {selectedLead.aiAnalysis.fit_assessment}</Typography>
+                      <Typography variant="body2"><strong>Confidence:</strong> {selectedLead.aiAnalysis.confidence_level}%</Typography>
+                      <Typography variant="body2" sx={{ mt: 1 }}>{selectedLead.aiAnalysis.reasoning}</Typography>
+                    </Box>
+                    {selectedLead.aiAnalysis.recommended_products?.length > 0 && (
+                      <>
+                        <Typography variant="subtitle2" gutterBottom color="primary">
+                          Recommended Products
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 2 }}>
+                          {selectedLead.aiAnalysis.recommended_products.map((product) => (
+                            <Chip key={product} label={product} size="small" />
+                          ))}
+                        </Box>
+                      </>
+                    )}
+                    {selectedLead.aiAnalysis.talking_points?.length > 0 && (
+                      <>
+                        <Typography variant="subtitle2" gutterBottom color="primary">
+                          Talking Points
+                        </Typography>
+                        <ul style={{ margin: 0, paddingLeft: 20 }}>
+                          {selectedLead.aiAnalysis.talking_points.map((point, i) => (
+                            <li key={i}><Typography variant="body2">{point}</Typography></li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <Box sx={{ textAlign: 'center', py: 4 }}>
+                    <Psychology sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
+                    <Typography color="text.secondary" gutterBottom>
+                      No AI analysis yet
+                    </Typography>
+                    <Button
+                      variant="outlined"
+                      startIcon={<Psychology />}
+                      onClick={() => handleAnalyzeLead(selectedLead.id)}
+                    >
+                      Analyze with AI
+                    </Button>
+                  </Box>
+                )}
+              </Grid>
+              <Grid item xs={12}>
+                <Divider sx={{ my: 1 }} />
+                <Typography variant="subtitle2" gutterBottom color="primary">
+                  Update Status
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                  {['new', 'contacted', 'qualified', 'converted', 'lost'].map((status) => (
+                    <Chip
+                      key={status}
+                      label={status}
+                      color={getStatusColor(status) as any}
+                      variant={selectedLead.status === status ? 'filled' : 'outlined'}
+                      onClick={() => handleUpdateStatus(selectedLead.id, status)}
+                      sx={{ cursor: 'pointer' }}
+                    />
+                  ))}
+                </Box>
               </Grid>
             </Grid>
           )}
@@ -603,6 +985,22 @@ const LeadGenerator: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Snackbar for notifications */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          severity={snackbar.severity}
+          variant="filled"
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };
