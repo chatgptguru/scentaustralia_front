@@ -156,7 +156,7 @@ This project is proprietary software developed for Scent Australia by WebAI ProT
 
 For technical support or questions, please contact the WebAI ProTech development team.
 
----
+--- 
 
 **Developed by WebAI ProTech for Scent Australia**  
 *Empowering business growth through intelligent automation*
