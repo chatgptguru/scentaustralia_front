@@ -57,6 +57,9 @@ import {
   TrendingUp,
 } from '@mui/icons-material';
 import { leadsApi, scraperApi, exportApi, Lead, LeadStats, ScrapingJob, ScraperConfig } from '../../services/api';
+import LeadScraping from '../../components/LeadGeneration/LeadScraping';
+import JobProgress from '../../components/LeadGeneration/JobProgress';
+import LeadResults from '../../components/LeadGeneration/LeadResults';
 
 // Transform backend Lead to frontend format
 const transformLead = (lead: Lead) => ({
@@ -86,7 +89,7 @@ const LeadGenerator: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIndustry, setSelectedIndustry] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
-  const [leads, setLeads] = useState<TransformedLead[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [stats, setStats] = useState<LeadStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -124,7 +127,7 @@ const LeadGenerator: React.FC = () => {
 
       const response = await leadsApi.getLeads(params);
       if (response.success && response.data) {
-        setLeads(response.data.leads.map(transformLead));
+        setLeads(response.data.leads);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to load leads');
@@ -251,8 +254,8 @@ const LeadGenerator: React.FC = () => {
     }
   };
 
-  const handleLeadClick = (lead: TransformedLead) => {
-    setSelectedLead(lead);
+  const handleLeadClick = (lead: Lead) => {
+    setSelectedLead(transformLead(lead));
     setOpenLeadDetail(true);
   };
 
@@ -343,7 +346,7 @@ const LeadGenerator: React.FC = () => {
 
   const columns: GridColDef[] = [
     {
-      field: 'companyName',
+      field: 'company_name',
       headerName: 'Company',
       width: 200,
       renderCell: (params) => (
@@ -355,7 +358,7 @@ const LeadGenerator: React.FC = () => {
         </Box>
       ),
     },
-    { field: 'contactName', headerName: 'Contact', width: 150 },
+    { field: 'contact_name', headerName: 'Contact', width: 150 },
     {
       field: 'industry',
       headerName: 'Industry',
@@ -389,7 +392,7 @@ const LeadGenerator: React.FC = () => {
       ),
     },
     {
-      field: 'estimatedValue',
+      field: 'estimated_value',
       headerName: 'Est. Value',
       width: 120,
       renderCell: (params) => params.value ? `$${(params.value as number).toLocaleString()}` : '-',
@@ -435,170 +438,176 @@ const LeadGenerator: React.FC = () => {
 
   const renderLeadGeneration = () => (
     <Grid container spacing={3}>
-      <Grid item xs={12} md={8}>
-        <Card>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              AI Lead Generation
-            </Typography>
-            
-            <Grid container spacing={2} sx={{ mb: 3 }}>
-              <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  label="Target Industries/Keywords"
-                  placeholder="e.g., luxury retail, hospitality, spa wellness (comma separated)"
-                  value={generationForm.keywords}
-                  onChange={(e) => setGenerationForm({ ...generationForm, keywords: e.target.value })}
-                  helperText={scraperConfig ? `Available: ${scraperConfig.target_industries.slice(0, 5).join(', ')}...` : ''}
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <TextField
-                  fullWidth
-                  label="Locations"
-                  placeholder="e.g., Sydney NSW, Melbourne VIC (comma separated)"
-                  value={generationForm.location}
-                  onChange={(e) => setGenerationForm({ ...generationForm, location: e.target.value })}
-                  helperText={scraperConfig ? `Available: ${scraperConfig.target_locations.slice(0, 3).join(', ')}...` : ''}
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <FormControl fullWidth>
-                  <InputLabel>Max Results</InputLabel>
-                  <Select
-                    value={generationForm.maxLeads}
-                    label="Max Results"
-                    onChange={(e) => setGenerationForm({ ...generationForm, maxLeads: e.target.value as number })}
-                  >
-                    <MenuItem value={25}>25 leads</MenuItem>
-                    <MenuItem value={50}>50 leads</MenuItem>
-                    <MenuItem value={100}>100 leads</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12}>
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={generationForm.analyzeWithAI}
-                      onChange={(e) => setGenerationForm({ ...generationForm, analyzeWithAI: e.target.checked })}
-                    />
-                  }
-                  label="Analyze leads with AI (score, priority, recommendations)"
-                />
-              </Grid>
-            </Grid>
-
-            {isGenerating && (
-              <Box sx={{ mb: 3 }}>
-                <Alert severity="info" icon={<CircularProgress size={20} />}>
-                  Generating leads... This may take a few minutes. You can continue using the app.
-                </Alert>
-                <LinearProgress sx={{ mt: 1 }} />
-              </Box>
-            )}
-
-            <Box sx={{ display: 'flex', gap: 2 }}>
-              {!isGenerating ? (
-                <Button
-                  variant="contained"
-                  startIcon={<PlayArrow />}
-                  onClick={handleGenerateLeads}
-                  size="large"
-                >
-                  Start Lead Generation
-                </Button>
-              ) : (
-                <Button
-                  variant="outlined"
-                  color="error"
-                  startIcon={<Stop />}
-                  onClick={handleStopGeneration}
-                  size="large"
-                >
-                  Stop Generation
-                </Button>
-              )}
-              <Button
-                variant="outlined"
-                startIcon={<Refresh />}
-                onClick={loadScrapingJobs}
-                size="large"
-              >
-                Refresh Jobs
-              </Button>
-            </Box>
-          </CardContent>
-        </Card>
+      {/* Main Scraping Configuration */}
+      <Grid item xs={12} lg={8}>
+        <LeadScraping
+          onJobStarted={(jobId) => {
+            setCurrentJobId(jobId);
+            setIsGenerating(true);
+            showSnackbar('Lead scraping job started!', 'success');
+          }}
+          onSuccess={(message) => showSnackbar(message, 'success')}
+          onError={(error) => showSnackbar(error, 'error')}
+        />
       </Grid>
 
-      <Grid item xs={12} md={4}>
-        <Card sx={{ mb: 2 }}>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              Scraper Configuration
-            </Typography>
-            {scraperConfig ? (
-              <Box>
-                <Typography variant="body2" color="text.secondary" gutterBottom>
-                  Max leads per run: {scraperConfig.max_leads_per_run}
-                </Typography>
-                <Typography variant="body2" color="text.secondary" gutterBottom>
-                  Delay between requests: {scraperConfig.scraping_delay}s
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Sources: {scraperConfig.available_sources.join(', ')}
-                </Typography>
-              </Box>
-            ) : (
-              <CircularProgress size={20} />
-            )}
-          </CardContent>
-        </Card>
+      {/* Job Progress Tracking */}
+      <Grid item xs={12} lg={4}>
+        {currentJobId && isGenerating ? (
+          <JobProgress
+            jobId={currentJobId}
+            onCompleted={(job) => {
+              setIsGenerating(false);
+              showSnackbar(`Scraping completed! Found ${job.processed_leads} leads.`, 'success');
+              loadLeads();
+              loadStats();
+              loadScrapingJobs();
+            }}
+            onFailed={(job) => {
+              setIsGenerating(false);
+              showSnackbar(`Scraping failed. Errors: ${job.errors.length}`, 'error');
+            }}
+            onClose={() => {
+              setCurrentJobId(null);
+              setIsGenerating(false);
+            }}
+          />
+        ) : (
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Scraper Information
+              </Typography>
+              {scraperConfig ? (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <Box>
+                    <Typography variant="caption" color="textSecondary">
+                      Max leads per run
+                    </Typography>
+                    <Typography variant="body2" fontWeight={600}>
+                      {scraperConfig.max_leads_per_run}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="textSecondary">
+                      Request delay
+                    </Typography>
+                    <Typography variant="body2" fontWeight={600}>
+                      {scraperConfig.scraping_delay}s between requests
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="textSecondary">
+                      Available sources
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 0.5 }}>
+                      {scraperConfig.available_sources.map((source) => (
+                        <Chip key={source} label={source} size="small" variant="outlined" />
+                      ))}
+                    </Box>
+                  </Box>
+                </Box>
+              ) : (
+                <CircularProgress size={20} />
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </Grid>
 
+      {/* Recent Scraping Jobs */}
+      <Grid item xs={12}>
         <Card>
           <CardContent>
             <Typography variant="h6" gutterBottom>
-              Recent Jobs
+              Scraping Job History
             </Typography>
-            <List>
-              {scrapingJobs.slice(0, 5).map((job) => (
-                <React.Fragment key={job.id}>
-                  <ListItem sx={{ px: 0 }}>
-                    <ListItemText
-                      primary={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          {job.status === 'completed' && <CheckCircle color="success" fontSize="small" />}
-                          {job.status === 'running' && <CircularProgress size={16} />}
-                          {job.status === 'failed' && <ErrorIcon color="error" fontSize="small" />}
-                          <Typography variant="body2">
-                            {job.parameters.keywords?.slice(0, 2).join(', ') || 'All industries'}
+            {scrapingJobs.length > 0 ? (
+              <Grid container spacing={2}>
+                {scrapingJobs.slice(0, 6).map((job) => (
+                  <Grid item xs={12} sm={6} md={4} key={job.id}>
+                    <Paper variant="outlined" sx={{ p: 2 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 1 }}>
+                        <Typography variant="body2" fontWeight={600}>
+                          {job.parameters.keywords?.slice(0, 2).join(', ') || 'All industries'}
+                        </Typography>
+                        <Chip
+                          label={job.status}
+                          size="small"
+                          color={
+                            job.status === 'completed'
+                              ? 'success'
+                              : job.status === 'running'
+                              ? 'info'
+                              : job.status === 'failed'
+                              ? 'error'
+                              : 'default'
+                          }
+                        />
+                      </Box>
+                      <Typography variant="caption" color="textSecondary" display="block" sx={{ mb: 1 }}>
+                        {new Date(job.started_at).toLocaleString()}
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 2 }}>
+                        <Box>
+                          <Typography variant="caption" color="textSecondary">
+                            Found
+                          </Typography>
+                          <Typography variant="body2" fontWeight={600}>
+                            {job.total_leads}
                           </Typography>
                         </Box>
-                      }
-                      secondary={`${job.processed_leads} leads • ${new Date(job.started_at).toLocaleDateString()}`}
-                      primaryTypographyProps={{ fontSize: '0.875rem' }}
-                      secondaryTypographyProps={{ fontSize: '0.75rem' }}
-                    />
-                    <Chip
-                      label={job.status}
-                      size="small"
-                      color={job.status === 'completed' ? 'success' : job.status === 'running' ? 'info' : 'default'}
-                    />
-                  </ListItem>
-                  <Divider />
-                </React.Fragment>
-              ))}
-              {scrapingJobs.length === 0 && (
-                <Typography variant="body2" color="text.secondary">
-                  No jobs yet. Start generating leads!
-                </Typography>
-              )}
-            </List>
+                        <Box>
+                          <Typography variant="caption" color="textSecondary">
+                            Processed
+                          </Typography>
+                          <Typography variant="body2" fontWeight={600}>
+                            {job.processed_leads}
+                          </Typography>
+                        </Box>
+                        {job.errors.length > 0 && (
+                          <Box>
+                            <Typography variant="caption" color="error">
+                              Errors
+                            </Typography>
+                            <Typography variant="body2" fontWeight={600} color="error">
+                              {job.errors.length}
+                            </Typography>
+                          </Box>
+                        )}
+                      </Box>
+                    </Paper>
+                  </Grid>
+                ))}
+              </Grid>
+            ) : (
+              <Alert severity="info">No scraping jobs yet. Start a new job using the configuration panel.</Alert>
+            )}
           </CardContent>
         </Card>
       </Grid>
+
+      {/* Scraped Leads Results */}
+      {leads.length > 0 && (
+        <Grid item xs={12}>
+          <LeadResults
+            leads={leads}
+            loading={loading}
+            onLeadSelect={(lead) => {
+              setSelectedLead(transformLead(lead));
+              setOpenLeadDetail(true);
+            }}
+            onLeadUpdate={(lead) => {
+              // Handle lead update
+              loadLeads();
+            }}
+            onLeadDelete={(leadId) => {
+              handleDeleteLead(leadId);
+            }}
+            onExport={handleExportExcel}
+          />
+        </Grid>
+      )}
     </Grid>
   );
 
