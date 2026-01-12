@@ -28,12 +28,12 @@ import {
   Download,
   Close,
 } from '@mui/icons-material';
-import { scraperApi, ScrapingJob } from '../../services/api';
+import { apolloApi, ApolloJob } from '../../services/api';
 
 interface JobProgressProps {
   jobId: string;
-  onCompleted?: (job: ScrapingJob) => void;
-  onFailed?: (job: ScrapingJob) => void;
+  onCompleted?: (job: ApolloJob) => void;
+  onFailed?: (job: ApolloJob) => void;
   onClose?: () => void;
 }
 
@@ -43,7 +43,7 @@ const JobProgress: React.FC<JobProgressProps> = ({
   onFailed,
   onClose,
 }) => {
-  const [job, setJob] = useState<ScrapingJob | null>(null);
+  const [job, setJob] = useState<ApolloJob | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -51,7 +51,7 @@ const JobProgress: React.FC<JobProgressProps> = ({
   // Fetch job status
   const fetchJobStatus = async () => {
     try {
-      const response = await scraperApi.getJobStatus(jobId);
+      const response = await apolloApi.getJobStatus(jobId);
       if (response.success && response.data) {
         setJob(response.data);
         setError(null);
@@ -156,7 +156,7 @@ const JobProgress: React.FC<JobProgressProps> = ({
   return (
     <Card>
       <CardHeader
-        title="Scraping Job Progress"
+        title="Lead Generation Progress"
         subheader={`Job ID: ${jobId}`}
         action={
           <Button
@@ -218,14 +218,26 @@ const JobProgress: React.FC<JobProgressProps> = ({
             </Grid>
             <Grid item xs={12} sm={6} md={3}>
               <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
-                <Typography variant="h6" color="error">
-                  {job.errors.length}
+                <Typography variant="h6" color="success.main">
+                  {job.saved_leads}
                 </Typography>
                 <Typography variant="caption" color="textSecondary">
-                  Errors
+                  Saved
                 </Typography>
               </Paper>
             </Grid>
+            {job.errors.length > 0 && (
+              <Grid item xs={12} sm={6} md={3}>
+                <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                  <Typography variant="h6" color="error">
+                    {job.errors.length}
+                  </Typography>
+                  <Typography variant="caption" color="textSecondary">
+                    Errors
+                  </Typography>
+                </Paper>
+              </Grid>
+            )}
             <Grid item xs={12} sm={6} md={3}>
               <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
                 <Typography variant="h6">{getDuration()}</Typography>
@@ -279,7 +291,7 @@ const JobProgress: React.FC<JobProgressProps> = ({
               </Typography>
               <Paper variant="outlined" sx={{ p: 2, bgcolor: 'error.light' }}>
                 <List dense>
-                  {job.errors.slice(0, 5).map((error, index) => (
+                  {job.errors.slice(0, 5).map((error: string, index: number) => (
                     <ListItem key={index} disableGutters>
                       <ListItemIcon sx={{ minWidth: 'auto', mr: 1 }}>
                         <ErrorIcon fontSize="small" color="error" />
@@ -307,13 +319,30 @@ const JobProgress: React.FC<JobProgressProps> = ({
             </Typography>
             <Paper variant="outlined" sx={{ p: 2 }}>
               <Typography variant="caption" component="div">
-                <strong>Keywords:</strong> {job.parameters.keywords.join(', ')}
+                <strong>Search Type:</strong> {job.parameters.search_type}
               </Typography>
+              {job.parameters.person_titles && job.parameters.person_titles.length > 0 && (
+                <Typography variant="caption" component="div" sx={{ mt: 0.5 }}>
+                  <strong>Job Titles:</strong> {job.parameters.person_titles.join(', ')}
+                </Typography>
+              )}
+              {job.parameters.person_locations && job.parameters.person_locations.length > 0 && (
+                <Typography variant="caption" component="div" sx={{ mt: 0.5 }}>
+                  <strong>Locations:</strong> {job.parameters.person_locations.join(', ')}
+                </Typography>
+              )}
+              {job.parameters.organization_industries && job.parameters.organization_industries.length > 0 && (
+                <Typography variant="caption" component="div" sx={{ mt: 0.5 }}>
+                  <strong>Industries:</strong> {job.parameters.organization_industries.join(', ')}
+                </Typography>
+              )}
+              {job.parameters.keywords && (
+                <Typography variant="caption" component="div" sx={{ mt: 0.5 }}>
+                  <strong>Keywords:</strong> {job.parameters.keywords}
+                </Typography>
+              )}
               <Typography variant="caption" component="div" sx={{ mt: 0.5 }}>
-                <strong>Locations:</strong> {job.parameters.locations.join(', ')}
-              </Typography>
-              <Typography variant="caption" component="div" sx={{ mt: 0.5 }}>
-                <strong>Sources:</strong> {job.parameters.sources.join(', ')}
+                <strong>Max Leads:</strong> {job.parameters.max_leads}
               </Typography>
               <Typography variant="caption" component="div" sx={{ mt: 0.5 }}>
                 <strong>AI Analysis:</strong> {job.parameters.analyze_with_ai ? 'Enabled' : 'Disabled'}

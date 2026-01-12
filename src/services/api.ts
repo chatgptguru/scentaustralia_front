@@ -12,11 +12,13 @@ export interface Lead {
   email: string | null;
   phone: string | null;
   website: string | null;
+  linkedin_url: string | null;
   industry: string | null;
   location: string | null;
   address: string | null;
   company_size: string | null;
   annual_revenue: string | null;
+  title: string | null;
   status: 'new' | 'contacted' | 'qualified' | 'converted' | 'lost';
   priority: 'high' | 'medium' | 'low';
   source: string;
@@ -56,29 +58,39 @@ export interface LeadStats {
   high_priority_count: number;
 }
 
-export interface ScrapingJob {
+export interface ApolloJob {
   id: string;
-  status: 'running' | 'completed' | 'failed' | 'stopped';
+  status: 'running' | 'completed' | 'failed';
   started_at: string;
   completed_at: string | null;
   total_leads: number;
   processed_leads: number;
+  saved_leads: number;
   errors: string[];
   parameters: {
-    keywords: string[];
-    locations: string[];
+    search_type: 'people' | 'organizations';
+    person_titles: string[];
+    person_locations: string[];
+    organization_locations: string[];
+    organization_industries: string[];
+    keywords: string;
     max_leads: number;
-    sources: string[];
     analyze_with_ai: boolean;
+    save_leads: boolean;
   };
 }
 
-export interface ScraperConfig {
-  target_industries: string[];
+export interface ApolloConfig {
+  is_configured: boolean;
   target_locations: string[];
-  max_leads_per_run: number;
-  scraping_delay: number;
-  available_sources: string[];
+  target_industries: string[];
+  max_leads_per_search: number;
+  available_filters: {
+    person_titles: string[];
+    employee_ranges: string[];
+    seniority_levels: string[];
+  };
+  search_types: string[];
 }
 
 export interface ApiResponse<T> {
@@ -208,56 +220,82 @@ export const leadsApi = {
 };
 
 // =========================
-// Scraper API
+// Apollo.io API
 // =========================
 
-export const scraperApi = {
-  // Start scraping job
-  startScraping: async (params: {
-    keywords?: string[];
-    locations?: string[];
+export const apolloApi = {
+  // Search for people/contacts
+  searchPeople: async (params: {
+    person_titles?: string[];
+    person_locations?: string[];
+    organization_locations?: string[];
+    organization_industries?: string[];
+    keywords?: string;
+    per_page?: number;
+    page?: number;
+  }): Promise<ApiResponse<{ leads: Lead[]; total: number; pagination: any; message: string }>> => {
+    return fetchApi('/apollo/search/people', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
+  // Search for organizations
+  searchOrganizations: async (params: {
+    organization_locations?: string[];
+    organization_industries?: string[];
+    keywords?: string;
+    per_page?: number;
+    page?: number;
+  }): Promise<ApiResponse<{ leads: Lead[]; total: number; pagination: any; message: string }>> => {
+    return fetchApi('/apollo/search/organizations', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
+  // Generate and save leads
+  generateLeads: async (params: {
+    search_type?: 'people' | 'organizations';
+    person_titles?: string[];
+    person_locations?: string[];
+    organization_locations?: string[];
+    organization_industries?: string[];
+    keywords?: string;
     max_leads?: number;
-    sources?: string[];
     analyze_with_ai?: boolean;
+    save_leads?: boolean;
   }): Promise<ApiResponse<{ job_id: string; status: string; message: string }>> => {
-    return fetchApi('/scraper/start', {
+    return fetchApi('/apollo/generate', {
       method: 'POST',
       body: JSON.stringify(params),
     });
   },
 
   // Get job status
-  getJobStatus: async (jobId: string): Promise<ApiResponse<ScrapingJob>> => {
-    return fetchApi(`/scraper/status/${jobId}`);
+  getJobStatus: async (jobId: string): Promise<ApiResponse<ApolloJob>> => {
+    return fetchApi(`/apollo/status/${jobId}`);
   },
 
   // List all jobs
-  listJobs: async (): Promise<ApiResponse<{ jobs: ScrapingJob[]; total: number }>> => {
-    return fetchApi('/scraper/jobs');
+  listJobs: async (): Promise<ApiResponse<{ jobs: ApolloJob[]; total: number }>> => {
+    return fetchApi('/apollo/jobs');
   },
 
-  // Stop a job
-  stopJob: async (jobId: string): Promise<ApiResponse<{ message: string }>> => {
-    return fetchApi(`/scraper/stop/${jobId}`, {
-      method: 'POST',
-    });
-  },
-
-  // Preview scraping
-  previewScraping: async (params: {
-    keywords?: string[];
-    locations?: string[];
-    max_leads?: number;
-  }): Promise<ApiResponse<{ preview_leads: any[]; total_found: number; message: string }>> => {
-    return fetchApi('/scraper/preview', {
+  // Enrich a contact
+  enrichContact: async (params: {
+    email?: string;
+    linkedin_url?: string;
+  }): Promise<ApiResponse<{ lead: Lead; message: string }>> => {
+    return fetchApi('/apollo/enrich', {
       method: 'POST',
       body: JSON.stringify(params),
     });
   },
 
-  // Get scraper config
-  getConfig: async (): Promise<ApiResponse<ScraperConfig>> => {
-    return fetchApi('/scraper/config');
+  // Get Apollo config
+  getConfig: async (): Promise<ApiResponse<ApolloConfig>> => {
+    return fetchApi('/apollo/config');
   },
 };
 
@@ -318,10 +356,11 @@ export const healthApi = {
   },
 };
 
-export default {
+const api = {
   leads: leadsApi,
-  scraper: scraperApi,
+  apollo: apolloApi,
   export: exportApi,
   health: healthApi,
 };
 
+export default api;

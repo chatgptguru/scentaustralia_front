@@ -31,35 +31,24 @@ import {
   Snackbar,
   CircularProgress,
   Tooltip,
-  FormControlLabel,
-  Checkbox,
 } from '@mui/material';
 import { DataGrid, GridColDef, GridRowSelectionModel } from '@mui/x-data-grid';
 import {
   Search,
-  Add,
-  FilterList,
-  Star,
   Business,
   Email,
   Phone,
   Download,
   Visibility,
-  Edit,
   Delete,
-  PlayArrow,
-  Stop,
   Refresh,
   Psychology,
-  CheckCircle,
-  Error as ErrorIcon,
-  Schedule,
   TrendingUp,
+  AutoAwesome,
+  LinkedIn,
 } from '@mui/icons-material';
-import { leadsApi, scraperApi, exportApi, Lead, LeadStats, ScrapingJob, ScraperConfig } from '../../services/api';
-import LeadScraping from '../../components/LeadGeneration/LeadScraping';
-import JobProgress from '../../components/LeadGeneration/JobProgress';
-import LeadResults from '../../components/LeadGeneration/LeadResults';
+import { leadsApi, apolloApi, exportApi, Lead, LeadStats, ApolloJob, ApolloConfig } from '../../services/api';
+import ApolloSearch from '../../components/LeadGeneration/ApolloSearch';
 
 // Transform backend Lead to frontend format
 const transformLead = (lead: Lead) => ({
@@ -69,8 +58,11 @@ const transformLead = (lead: Lead) => ({
   email: lead.email || '',
   phone: lead.phone || '',
   website: lead.website || '',
+  linkedinUrl: lead.linkedin_url || '',
   industry: lead.industry || '',
   location: lead.location || '',
+  title: lead.title || '',
+  companySize: lead.company_size || '',
   score: lead.score,
   status: lead.status,
   source: lead.source,
@@ -102,17 +94,11 @@ const LeadGenerator: React.FC = () => {
     severity: 'info',
   });
 
-  // Scraping state
-  const [scraperConfig, setScraperConfig] = useState<ScraperConfig | null>(null);
-  const [scrapingJobs, setScrapingJobs] = useState<ScrapingJob[]>([]);
+  // Apollo state
+  const [apolloConfig, setApolloConfig] = useState<ApolloConfig | null>(null);
+  const [apolloJobs, setApolloJobs] = useState<ApolloJob[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
-  const [generationForm, setGenerationForm] = useState({
-    keywords: '',
-    location: '',
-    maxLeads: 50,
-    analyzeWithAI: true,
-  });
 
   const industries = ['All', 'Retail', 'Hospitality', 'Fashion', 'Wellness', 'Healthcare', 'Corporate'];
 
@@ -148,33 +134,33 @@ const LeadGenerator: React.FC = () => {
     }
   };
 
-  const loadScraperConfig = async () => {
+  const loadApolloConfig = async () => {
     try {
-      const response = await scraperApi.getConfig();
+      const response = await apolloApi.getConfig();
       if (response.success && response.data) {
-        setScraperConfig(response.data);
+        setApolloConfig(response.data);
       }
     } catch (err) {
-      console.error('Failed to load scraper config:', err);
+      console.error('Failed to load Apollo config:', err);
     }
   };
 
-  const loadScrapingJobs = async () => {
+  const loadApolloJobs = async () => {
     try {
-      const response = await scraperApi.listJobs();
+      const response = await apolloApi.listJobs();
       if (response.success && response.data) {
-        setScrapingJobs(response.data.jobs);
+        setApolloJobs(response.data.jobs);
       }
     } catch (err) {
-      console.error('Failed to load scraping jobs:', err);
+      console.error('Failed to load Apollo jobs:', err);
     }
   };
 
   useEffect(() => {
     loadLeads();
     loadStats();
-    loadScraperConfig();
-    loadScrapingJobs();
+    loadApolloConfig();
+    loadApolloJobs();
   }, [loadLeads]);
 
   // Poll for job status when generating
@@ -184,19 +170,19 @@ const LeadGenerator: React.FC = () => {
     if (currentJobId && isGenerating) {
       interval = setInterval(async () => {
         try {
-          const response = await scraperApi.getJobStatus(currentJobId);
+          const response = await apolloApi.getJobStatus(currentJobId);
           if (response.success && response.data) {
             const job = response.data;
-            if (job.status === 'completed' || job.status === 'failed' || job.status === 'stopped') {
+            if (job.status === 'completed' || job.status === 'failed') {
               setIsGenerating(false);
               setCurrentJobId(null);
               loadLeads();
               loadStats();
-              loadScrapingJobs();
+              loadApolloJobs();
               showSnackbar(
                 job.status === 'completed' 
-                  ? `Scraping completed! Found ${job.processed_leads} leads.`
-                  : `Scraping ${job.status}`,
+                  ? `Lead generation completed! Found ${job.saved_leads} leads.`
+                  : `Lead generation failed`,
                 job.status === 'completed' ? 'success' : 'error'
               );
             }
@@ -217,43 +203,6 @@ const LeadGenerator: React.FC = () => {
   };
 
   // Actions
-  const handleGenerateLeads = async () => {
-    try {
-      setIsGenerating(true);
-      const keywords = generationForm.keywords.split(',').map(k => k.trim()).filter(k => k);
-      const locations = generationForm.location.split(',').map(l => l.trim()).filter(l => l);
-
-      const response = await scraperApi.startScraping({
-        keywords: keywords.length > 0 ? keywords : undefined,
-        locations: locations.length > 0 ? locations : undefined,
-        max_leads: generationForm.maxLeads,
-        analyze_with_ai: generationForm.analyzeWithAI,
-      });
-
-      if (response.success && response.data) {
-        setCurrentJobId(response.data.job_id);
-        showSnackbar('Lead generation started!', 'info');
-      }
-    } catch (err: any) {
-      setIsGenerating(false);
-      showSnackbar(err.message || 'Failed to start lead generation', 'error');
-    }
-  };
-
-  const handleStopGeneration = async () => {
-    if (currentJobId) {
-      try {
-        await scraperApi.stopJob(currentJobId);
-        setIsGenerating(false);
-        setCurrentJobId(null);
-        showSnackbar('Lead generation stopped', 'info');
-        loadScrapingJobs();
-      } catch (err: any) {
-        showSnackbar(err.message || 'Failed to stop generation', 'error');
-      }
-    }
-  };
-
   const handleLeadClick = (lead: Lead) => {
     setSelectedLead(transformLead(lead));
     setOpenLeadDetail(true);
@@ -359,6 +308,7 @@ const LeadGenerator: React.FC = () => {
       ),
     },
     { field: 'contact_name', headerName: 'Contact', width: 150 },
+    { field: 'title', headerName: 'Title', width: 120 },
     {
       field: 'industry',
       headerName: 'Industry',
@@ -392,10 +342,17 @@ const LeadGenerator: React.FC = () => {
       ),
     },
     {
-      field: 'estimated_value',
-      headerName: 'Est. Value',
-      width: 120,
-      renderCell: (params) => params.value ? `$${(params.value as number).toLocaleString()}` : '-',
+      field: 'source',
+      headerName: 'Source',
+      width: 100,
+      renderCell: (params) => (
+        <Chip 
+          label={params.value} 
+          size="small" 
+          variant="outlined"
+          icon={params.value === 'apollo.io' ? <AutoAwesome fontSize="small" /> : undefined}
+        />
+      ),
     },
     {
       field: 'priority',
@@ -438,71 +395,72 @@ const LeadGenerator: React.FC = () => {
 
   const renderLeadGeneration = () => (
     <Grid container spacing={3}>
-      {/* Main Scraping Configuration */}
+      {/* Apollo Search Configuration */}
       <Grid item xs={12} lg={8}>
-        <LeadScraping
+        <ApolloSearch
           onJobStarted={(jobId) => {
             setCurrentJobId(jobId);
             setIsGenerating(true);
-            showSnackbar('Lead scraping job started!', 'success');
+            showSnackbar('Lead generation started!', 'success');
           }}
           onSuccess={(message) => showSnackbar(message, 'success')}
           onError={(error) => showSnackbar(error, 'error')}
         />
       </Grid>
 
-      {/* Job Progress Tracking */}
+      {/* Job Progress / Status */}
       <Grid item xs={12} lg={4}>
         {currentJobId && isGenerating ? (
-          <JobProgress
-            jobId={currentJobId}
-            onCompleted={(job) => {
-              setIsGenerating(false);
-              showSnackbar(`Scraping completed! Found ${job.processed_leads} leads.`, 'success');
-              loadLeads();
-              loadStats();
-              loadScrapingJobs();
-            }}
-            onFailed={(job) => {
-              setIsGenerating(false);
-              showSnackbar(`Scraping failed. Errors: ${job.errors.length}`, 'error');
-            }}
-            onClose={() => {
-              setCurrentJobId(null);
-              setIsGenerating(false);
-            }}
-          />
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Generating Leads...
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                <CircularProgress size={24} sx={{ mr: 2 }} />
+                <Typography>Job: {currentJobId}</Typography>
+              </Box>
+              <LinearProgress />
+              <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
+                Fetching data from Apollo.io and analyzing with AI...
+              </Typography>
+            </CardContent>
+          </Card>
         ) : (
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                Scraper Information
+                Apollo.io Status
               </Typography>
-              {scraperConfig ? (
+              {apolloConfig ? (
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   <Box>
                     <Typography variant="caption" color="textSecondary">
-                      Max leads per run
+                      API Status
                     </Typography>
                     <Typography variant="body2" fontWeight={600}>
-                      {scraperConfig.max_leads_per_run}
+                      <Chip 
+                        label={apolloConfig.is_configured ? 'Connected' : 'Not Configured'}
+                        size="small"
+                        color={apolloConfig.is_configured ? 'success' : 'error'}
+                      />
                     </Typography>
                   </Box>
                   <Box>
                     <Typography variant="caption" color="textSecondary">
-                      Request delay
+                      Max leads per search
                     </Typography>
                     <Typography variant="body2" fontWeight={600}>
-                      {scraperConfig.scraping_delay}s between requests
+                      {apolloConfig.max_leads_per_search}
                     </Typography>
                   </Box>
                   <Box>
                     <Typography variant="caption" color="textSecondary">
-                      Available sources
+                      Search types
                     </Typography>
                     <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 0.5 }}>
-                      {scraperConfig.available_sources.map((source) => (
-                        <Chip key={source} label={source} size="small" variant="outlined" />
+                      {apolloConfig.search_types.map((type) => (
+                        <Chip key={type} label={type} size="small" variant="outlined" />
                       ))}
                     </Box>
                   </Box>
@@ -515,21 +473,21 @@ const LeadGenerator: React.FC = () => {
         )}
       </Grid>
 
-      {/* Recent Scraping Jobs */}
+      {/* Recent Jobs */}
       <Grid item xs={12}>
         <Card>
           <CardContent>
             <Typography variant="h6" gutterBottom>
-              Scraping Job History
+              Recent Lead Generation Jobs
             </Typography>
-            {scrapingJobs.length > 0 ? (
+            {apolloJobs.length > 0 ? (
               <Grid container spacing={2}>
-                {scrapingJobs.slice(0, 6).map((job) => (
+                {apolloJobs.slice(0, 6).map((job) => (
                   <Grid item xs={12} sm={6} md={4} key={job.id}>
                     <Paper variant="outlined" sx={{ p: 2 }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 1 }}>
                         <Typography variant="body2" fontWeight={600}>
-                          {job.parameters.keywords?.slice(0, 2).join(', ') || 'All industries'}
+                          {job.parameters.search_type === 'people' ? 'People Search' : 'Organization Search'}
                         </Typography>
                         <Chip
                           label={job.status}
@@ -539,9 +497,7 @@ const LeadGenerator: React.FC = () => {
                               ? 'success'
                               : job.status === 'running'
                               ? 'info'
-                              : job.status === 'failed'
-                              ? 'error'
-                              : 'default'
+                              : 'error'
                           }
                         />
                       </Box>
@@ -559,10 +515,10 @@ const LeadGenerator: React.FC = () => {
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">
-                            Processed
+                            Saved
                           </Typography>
                           <Typography variant="body2" fontWeight={600}>
-                            {job.processed_leads}
+                            {job.saved_leads}
                           </Typography>
                         </Box>
                         {job.errors.length > 0 && (
@@ -581,33 +537,11 @@ const LeadGenerator: React.FC = () => {
                 ))}
               </Grid>
             ) : (
-              <Alert severity="info">No scraping jobs yet. Start a new job using the configuration panel.</Alert>
+              <Alert severity="info">No lead generation jobs yet. Configure Apollo.io and start generating leads.</Alert>
             )}
           </CardContent>
         </Card>
       </Grid>
-
-      {/* Scraped Leads Results */}
-      {leads.length > 0 && (
-        <Grid item xs={12}>
-          <LeadResults
-            leads={leads}
-            loading={loading}
-            onLeadSelect={(lead) => {
-              setSelectedLead(transformLead(lead));
-              setOpenLeadDetail(true);
-            }}
-            onLeadUpdate={(lead) => {
-              // Handle lead update
-              loadLeads();
-            }}
-            onLeadDelete={(leadId) => {
-              handleDeleteLead(leadId);
-            }}
-            onExport={handleExportExcel}
-          />
-        </Grid>
-      )}
     </Grid>
   );
 
@@ -721,11 +655,9 @@ const LeadGenerator: React.FC = () => {
           Refresh
         </Button>
         {selectedRows.length > 0 && (
-          <>
-            <Button variant="outlined" startIcon={<Psychology />} onClick={handleBulkAnalyze}>
-              Analyze ({selectedRows.length})
-            </Button>
-          </>
+          <Button variant="outlined" startIcon={<Psychology />} onClick={handleBulkAnalyze}>
+            Analyze ({selectedRows.length})
+          </Button>
         )}
         <Button variant="outlined" startIcon={<Download />} onClick={handleExportExcel}>
           Export Excel
@@ -770,15 +702,15 @@ const LeadGenerator: React.FC = () => {
               Lead Sources
             </Typography>
             <Box sx={{ mt: 2 }}>
-              {['AI Generated', 'Manual', 'Google Search', 'Yellow Pages'].map((source, index) => (
+              {['Apollo.io', 'Manual Entry', 'Import'].map((source, index) => (
                 <Box key={source} sx={{ mb: 2 }}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
                     <Typography variant="body2">{source}</Typography>
-                    <Typography variant="body2">{[45, 20, 25, 10][index]}%</Typography>
+                    <Typography variant="body2">{[75, 15, 10][index]}%</Typography>
                   </Box>
                   <LinearProgress
                     variant="determinate"
-                    value={[45, 20, 25, 10][index]}
+                    value={[75, 15, 10][index]}
                     sx={{ height: 8, borderRadius: 4 }}
                   />
                 </Box>
@@ -843,7 +775,7 @@ const LeadGenerator: React.FC = () => {
           Lead Generator
         </Typography>
         <Typography variant="body1" color="text.secondary">
-          AI-powered lead generation and management system
+          AI-powered lead generation with Apollo.io integration
         </Typography>
       </Box>
 
@@ -856,7 +788,11 @@ const LeadGenerator: React.FC = () => {
               </Badge>
             }
           />
-          <Tab label="Generate New Leads" />
+          <Tab 
+            label="Generate New Leads" 
+            icon={<AutoAwesome fontSize="small" />}
+            iconPosition="start"
+          />
           <Tab label="Analytics" />
         </Tabs>
       </Box>
@@ -896,9 +832,18 @@ const LeadGenerator: React.FC = () => {
                 </Typography>
                 <Box sx={{ mb: 2 }}>
                   <Typography variant="body2"><strong>Name:</strong> {selectedLead.contactName || 'N/A'}</Typography>
+                  <Typography variant="body2"><strong>Title:</strong> {selectedLead.title || 'N/A'}</Typography>
                   <Typography variant="body2"><strong>Email:</strong> {selectedLead.email || 'N/A'}</Typography>
                   <Typography variant="body2"><strong>Phone:</strong> {selectedLead.phone || 'N/A'}</Typography>
                   <Typography variant="body2"><strong>Website:</strong> {selectedLead.website || 'N/A'}</Typography>
+                  {selectedLead.linkedinUrl && (
+                    <Typography variant="body2">
+                      <strong>LinkedIn:</strong>{' '}
+                      <a href={selectedLead.linkedinUrl} target="_blank" rel="noopener noreferrer">
+                        View Profile
+                      </a>
+                    </Typography>
+                  )}
                 </Box>
                 
                 <Typography variant="subtitle2" gutterBottom color="primary">
@@ -907,6 +852,7 @@ const LeadGenerator: React.FC = () => {
                 <Box>
                   <Typography variant="body2"><strong>Industry:</strong> {selectedLead.industry || 'N/A'}</Typography>
                   <Typography variant="body2"><strong>Location:</strong> {selectedLead.location || 'N/A'}</Typography>
+                  <Typography variant="body2"><strong>Company Size:</strong> {selectedLead.companySize || 'N/A'}</Typography>
                   <Typography variant="body2"><strong>Est. Value:</strong> ${selectedLead.estimatedValue?.toLocaleString() || 0}</Typography>
                   <Typography variant="body2"><strong>Source:</strong> {selectedLead.source}</Typography>
                 </Box>
@@ -986,6 +932,16 @@ const LeadGenerator: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenLeadDetail(false)}>Close</Button>
+          {selectedLead?.linkedinUrl && (
+            <Button 
+              variant="outlined" 
+              startIcon={<LinkedIn />}
+              href={selectedLead.linkedinUrl}
+              target="_blank"
+            >
+              View LinkedIn
+            </Button>
+          )}
           <Button variant="outlined" startIcon={<Email />}>
             Send Email
           </Button>
