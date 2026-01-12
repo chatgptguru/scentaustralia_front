@@ -213,6 +213,14 @@ export const leadsApi = {
     });
   },
 
+  // Bulk delete
+  bulkDelete: async (leadIds: string[]): Promise<ApiResponse<{ deleted_count: number; requested_count: number; message: string }>> => {
+    return fetchApi('/leads/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ lead_ids: leadIds }),
+    });
+  },
+
   // Get lead statistics
   getStats: async (): Promise<ApiResponse<LeadStats>> => {
     return fetchApi('/leads/stats');

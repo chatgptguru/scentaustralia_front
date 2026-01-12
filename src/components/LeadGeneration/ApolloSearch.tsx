@@ -187,30 +187,35 @@ const ApolloSearch: React.FC<ApolloSearchProps> = ({
                 Job Titles
               </Typography>
               <Box sx={{ display: 'flex', gap: 1, mb: 1.5 }}>
-                <Autocomplete
-                  freeSolo
-                  options={commonTitles}
-                  inputValue={titleInput}
-                  onInputChange={(_, value) => setTitleInput(value)}
-                  onChange={(_, value) => {
-                    if (value && !personTitles.includes(value)) {
-                      setPersonTitles([...personTitles, value]);
+                <TextField
+                  size="small"
+                  placeholder="Add job title (e.g., CEO, Director)"
+                  value={titleInput}
+                  onChange={(e) => setTitleInput(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && titleInput.trim()) {
+                      addItem(titleInput, setTitleInput, personTitles, setPersonTitles);
                     }
-                    setTitleInput('');
                   }}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      size="small"
-                      placeholder="Add job title (e.g., CEO, Director)"
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter') {
-                          addItem(titleInput, setTitleInput, personTitles, setPersonTitles);
-                        }
-                      }}
-                    />
-                  )}
                   fullWidth
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <Button
+                          size="small"
+                          onClick={() => {
+                            if (titleInput.trim()) {
+                              addItem(titleInput, setTitleInput, personTitles, setPersonTitles);
+                            }
+                          }}
+                          variant="text"
+                          sx={{ mr: -1 }}
+                        >
+                          <Add />
+                        </Button>
+                      </InputAdornment>
+                    ),
+                  }}
                 />
               </Box>
               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
@@ -233,30 +238,35 @@ const ApolloSearch: React.FC<ApolloSearchProps> = ({
               {searchType === 'people' ? 'Person Locations' : 'Organization Locations'}
             </Typography>
             <Box sx={{ display: 'flex', gap: 1, mb: 1.5 }}>
-              <Autocomplete
-                freeSolo
-                options={config?.target_locations || []}
-                inputValue={locationInput}
-                onInputChange={(_, value) => setLocationInput(value)}
-                onChange={(_, value) => {
-                  if (value && !personLocations.includes(value)) {
-                    setPersonLocations([...personLocations, value]);
+              <TextField
+                size="small"
+                placeholder="Add location (e.g., Sydney, Australia)"
+                value={locationInput}
+                onChange={(e) => setLocationInput(e.target.value)}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter' && locationInput.trim()) {
+                    addItem(locationInput, setLocationInput, personLocations, setPersonLocations);
                   }
-                  setLocationInput('');
                 }}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    size="small"
-                    placeholder="Add location (e.g., Sydney, Australia)"
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter') {
-                        addItem(locationInput, setLocationInput, personLocations, setPersonLocations);
-                      }
-                    }}
-                  />
-                )}
                 fullWidth
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <Button
+                        size="small"
+                        onClick={() => {
+                          if (locationInput.trim()) {
+                            addItem(locationInput, setLocationInput, personLocations, setPersonLocations);
+                          }
+                        }}
+                        variant="text"
+                        sx={{ mr: -1 }}
+                      >
+                        <Add />
+                      </Button>
+                    </InputAdornment>
+                  ),
+                }}
               />
             </Box>
             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
@@ -278,30 +288,35 @@ const ApolloSearch: React.FC<ApolloSearchProps> = ({
               Industries
             </Typography>
             <Box sx={{ display: 'flex', gap: 1, mb: 1.5 }}>
-              <Autocomplete
-                freeSolo
-                options={config?.target_industries || []}
-                inputValue={industryInput}
-                onInputChange={(_, value) => setIndustryInput(value)}
-                onChange={(_, value) => {
-                  if (value && !organizationIndustries.includes(value)) {
-                    setOrganizationIndustries([...organizationIndustries, value]);
+              <TextField
+                size="small"
+                placeholder="Add industry (e.g., Hospitality, Retail)"
+                value={industryInput}
+                onChange={(e) => setIndustryInput(e.target.value)}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter' && industryInput.trim()) {
+                    addItem(industryInput, setIndustryInput, organizationIndustries, setOrganizationIndustries);
                   }
-                  setIndustryInput('');
                 }}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    size="small"
-                    placeholder="Add industry (e.g., Hospitality, Retail)"
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter') {
-                        addItem(industryInput, setIndustryInput, organizationIndustries, setOrganizationIndustries);
-                      }
-                    }}
-                  />
-                )}
                 fullWidth
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <Button
+                        size="small"
+                        onClick={() => {
+                          if (industryInput.trim()) {
+                            addItem(industryInput, setIndustryInput, organizationIndustries, setOrganizationIndustries);
+                          }
+                        }}
+                        variant="text"
+                        sx={{ mr: -1 }}
+                      >
+                        <Add />
+                      </Button>
+                    </InputAdornment>
+                  ),
+                }}
               />
             </Box>
             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
